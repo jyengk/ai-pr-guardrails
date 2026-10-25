@@ -1,0 +1,11 @@
+---
+description: Billing and pricing code standards
+globs: ["billing/**", "pricing/**"]
+alwaysApply: false
+---
+- Money is integer minor units (paise/cents) or Decimal. Never use float.
+- Every usage event and ledger write needs an idempotency key (event_id).
+- Never update or delete ledger rows; write adjustments instead.
+- Prices come from the versioned price book. Never hard-code prices.
+- Tests must cover duplicate events and late-arriving events.
+- Use only dependencies already listed in requirements.txt.

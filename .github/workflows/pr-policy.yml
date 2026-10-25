@@ -1,0 +1,81 @@
+name: pr-policy
+
+# Runs on every PR open/edit/push, so fixing the description re-runs the check.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write   # needed to add labels
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check AI disclosure, risk tier, money paths and review instructions
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const body = pr.body || "";
+            const { owner, repo } = context.repo;
+
+            // True if a checklist line "- [x] <label>" is ticked in the PR description
+            const ticked = (label) => new RegExp(`- \\[x\\] ${label}`, "i").test(body);
+
+            const noAi   = ticked("No AI used");
+            const usedAi = ticked("AI-assisted") || ticked("Largely AI-generated");
+            const tiers  = ["Low", "Medium", "High"].filter(t => ticked(t));
+            const errors = [];
+
+            // 1. Exactly one AI answer and one risk tier
+            if (!noAi && !usedAi) errors.push("Tick one box under 'AI assistance'.");
+            if (noAi && usedAi)   errors.push("Tick only one box under 'AI assistance'.");
+            if (tiers.length !== 1) errors.push("Tick exactly one box under 'Risk tier'.");
+
+            // 2. Money paths must be declared High
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner, repo, pull_number: pr.number,
+            });
+            const moneyPrefixes = ["billing/", "pricing/"];
+            const touchesMoney = files.some(f => moneyPrefixes.some(p => f.filename.startsWith(p)));
+            if (touchesMoney && tiers[0] !== "High") {
+              errors.push("This PR changes billing/pricing code, so the risk tier must be High.");
+            }
+
+            // 3. Review/AI instruction files must not change in the same PR as money code.
+            //    The AI reviewer reads instructions from the PR's own branch, so a PR could
+            //    weaken REVIEW.md and get its billing change reviewed under the weaker rules.
+            const instructionFiles = ["REVIEW.md", "AGENTS.md", "CLAUDE.md", "GEMINI.md",
+                                      ".github/copilot-instructions.md", ".cursorignore"];
+            const instructionPrefixes = [".github/instructions/", ".cursor/rules/"];
+            const changedInstructions = files
+              .map(f => f.filename)
+              .filter(n => instructionFiles.includes(n) || instructionPrefixes.some(p => n.startsWith(p)));
+            if (changedInstructions.length && touchesMoney) {
+              errors.push("Review/AI instruction files (" + changedInstructions.join(", ") +
+                          ") can't change in the same PR as billing/pricing code. Split into two PRs.");
+            }
+
+            // 4. Large PR warning (doesn't fail, just warns)
+            const changed = files.reduce((n, f) => n + f.additions + f.deletions, 0);
+            if (changed > 400) {
+              core.warning(`Large PR (${changed} lines changed). Consider splitting it so reviewers can actually read it.`);
+            }
+
+            // 5. Labels for dashboards
+            const labels = [];
+            if (usedAi) labels.push("ai-assisted");
+            if (touchesMoney) labels.push("money-path");
+            if (changedInstructions.length) labels.push("ai-instructions");
+            if (labels.length) {
+              await github.rest.issues.addLabels({ owner, repo, issue_number: pr.number, labels });
+            }
+
+            // 6. Result
+            if (errors.length) {
+              core.setFailed(errors.join("\n"));
+            } else {
+              core.info(`OK – AI: ${usedAi ? "used" : "none"}, tier: ${tiers[0]}, money path: ${touchesMoney}`);
+            }

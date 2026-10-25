@@ -1,0 +1,21 @@
+# Who must approve changes to which paths.
+# Replace @jyengk with a real user, or @your-org/team-name for a team.
+# The LAST matching line wins, so put specific paths below general ones.
+
+# Default owner for everything
+*                 @jyengk
+
+# Money paths: billing owners must approve
+/billing/         @jyengk
+/pricing/         @jyengk
+
+# Protect the guardrails themselves
+/.cursor/         @jyengk
+/.cursorignore    @jyengk
+/.github/         @jyengk
+
+# AI review and agent instructions (the AI reviewer reads these from the PR's own branch)
+/REVIEW.md        @jyengk
+/AGENTS.md        @jyengk
+/CLAUDE.md        @jyengk
+/GEMINI.md        @jyengk

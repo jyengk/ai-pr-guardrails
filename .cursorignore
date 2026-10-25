@@ -1,0 +1,7 @@
+# Files Cursor's AI must never read or send to a model
+.env
+.env.*
+secrets/
+**/*.pem
+**/*.key
+**/fixtures/customer_data/**
